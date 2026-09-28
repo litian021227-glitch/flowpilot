@@ -26,6 +26,7 @@ function App() {
   const [approvalTaskId, setApprovalTaskId] = useState('demo-2');
   const [taskText, setTaskText] = useState('');
   const [toast, setToast] = useState('');
+  const [lastRun, setLastRun] = useState(null);
   const [knowledgeOpen, setKnowledgeOpen] = useState(false);
   const [docTitle, setDocTitle] = useState('');
   const [docContent, setDocContent] = useState('');
@@ -62,9 +63,11 @@ function App() {
       const response = await fetch('/api/agent/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ task }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Agent 执行失败');
+      setLastRun({ task, summary: result.summary, mode: result.mode });
       await loadTasks();
       notify(result.summary || `已创建任务：${task}`);
     } catch (error) {
+      setLastRun({ task, summary: error.message, mode: 'error' });
       notify(error.message || `任务执行失败：${task}`);
     } finally {
       setRunning(false);
@@ -92,6 +95,7 @@ function App() {
                 <div className="chart-panel"><div className="chart-head"><strong>本月销售趋势</strong><span><i></i>销售额（万元）</span></div><div className="chart-area"><div className="y-axis"><span>6,000</span><span>4,500</span><span>3,000</span><span>1,500</span><span>0</span></div><div className="chart"><div className="grid-lines"></div><svg viewBox="0 0 560 180" preserveAspectRatio="none"><defs><linearGradient id="fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="#3169ee" stopOpacity=".22"/><stop offset="1" stopColor="#3169ee" stopOpacity="0"/></linearGradient></defs><path d="M0,143 C35,137 42,139 75,119 S120,127 150,105 S195,118 225,91 S270,101 305,84 S350,96 380,69 S425,80 455,58 S505,72 560,38 L560,180 L0,180 Z" fill="url(#fill)"/><path d="M0,143 C35,137 42,139 75,119 S120,127 150,105 S195,118 225,91 S270,101 305,84 S350,96 380,69 S425,80 455,58 S505,72 560,38" fill="none" stroke="#3169ee" strokeWidth="3" strokeLinecap="round"/></svg><div className="x-axis"><span>5月1日</span><span>5月7日</span><span>5月14日</span><span>5月21日</span><span>5月28日</span></div></div><div className="chart-total"><strong>¥ 4,320 万</strong><em>↑ 12.5%</em><span>较上月</span></div></div></div>
                 <div className="sources"><h3>来源引用</h3>{[['销售数据_2025年5月.xlsx','企业知识库','销售数据','2025-05-31','blue'],['市场分析报告_2025Q2.pdf','企业知识库','市场研究','2025-04-28','pink'],['客户行业分布数据表.xlsx','企业知识库','客户管理','2025-05-20','green']].map(([name, tag, type, date, color]) => <div className="source-row" key={name}><div className={`file-icon ${color}`}><FileText size={16} /></div><strong>{name}</strong><span>{tag}</span><span>{type}</span><time>{date}</time><ArrowUpRight size={16} /></div>)}</div><time className="ai-time">今天 10:25</time></div></div>
               <div className="composer"><Paperclip size={20} /><input value={taskText} onChange={e => setTaskText(e.target.value)} onKeyDown={e => e.key === 'Enter' && sendTask()} placeholder="继续提问，或输入新的任务需求..." /><button onClick={sendTask}><Send size={18} /></button></div>
+              {lastRun && <div className={`run-result ${lastRun.mode === 'error' ? 'error' : ''}`}><strong>{lastRun.mode === 'fallback' ? '已使用降级模式完成' : lastRun.mode === 'error' ? '任务执行失败' : 'Agent 已完成任务'}</strong><span>{lastRun.summary}</span></div>}
             </div>
           </section>
 

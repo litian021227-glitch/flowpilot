@@ -43,7 +43,12 @@ async function runAgent(task) {
       tools: [],
     }),
   });
-  if (!response.ok) throw new Error(`AI provider returned ${response.status}`);
+  if (!response.ok) {
+    if (response.status === 429 || response.status >= 500) {
+      return { ...demoResult(task), sources, mode: 'fallback', summary: 'AI 服务当前暂时不可用，已使用安全演示模式完成任务拆解；任务已进入待审批队列。', providerError: `AI provider returned ${response.status}` };
+    }
+    throw new Error(`AI provider returned ${response.status}`);
+  }
   const data = await response.json();
   const text = data.output_text || '模型未返回文本结果';
   return { mode: 'live', task, summary: text, trace: demoResult(task).trace, sources, requiresApproval: true };
