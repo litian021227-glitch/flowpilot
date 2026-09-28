@@ -61,9 +61,11 @@ function App() {
     try {
       const response = await fetch('/api/agent/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ task }) });
       const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Agent 执行失败');
+      await loadTasks();
       notify(result.summary || `已创建任务：${task}`);
-    } catch {
-      notify(`已创建任务：${task}`);
+    } catch (error) {
+      notify(error.message || `任务执行失败：${task}`);
     } finally {
       setRunning(false);
     }
