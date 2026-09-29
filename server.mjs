@@ -575,7 +575,7 @@ async function persistTask(result, idempotencyKey = null) {
 async function listTasks() {
   if (!supabaseUrl || !supabaseKey) return memoryTasks;
   const workspace = await requireWorkspaceMember();
-  const response = await fetchWithTimeout(`${supabaseUrl}/rest/v1/tasks?select=id,title,status,created_at,updated_at&workspace_id=eq.${encodeURIComponent(workspace.id)}&order=updated_at.desc`, { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } }, 10_000);
+  const response = await fetchWithTimeout(`${supabaseUrl}/rest/v1/tasks?select=id,title,status,result,input,created_at,updated_at&workspace_id=eq.${encodeURIComponent(workspace.id)}&order=updated_at.desc`, { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } }, 10_000);
   if (!response.ok) throw new Error(`Task list failed: ${response.status}`);
   return response.json();
 }
