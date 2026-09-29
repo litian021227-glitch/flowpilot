@@ -43,6 +43,7 @@ const requestLog = new Map();
 const requireAuth = process.env.REQUIRE_AUTH === 'true';
 const memoryIdempotency = new Map();
 const memoryWebhookEvents = new Set();
+const runningAgentCounts = new Map();
 
 function httpError(status, message, code = 'request_error') {
   const error = new Error(message);
@@ -806,8 +807,8 @@ async function approveTask(taskId, action) {
 async function handleRequest(request, response) {
   response.setHeader('Content-Type', 'application/json; charset=utf-8');
   response.setHeader('Access-Control-Allow-Origin', allowedOrigin);
-  response.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  response.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Idempotency-Key, X-Request-Id, X-Workspace-Id');
+  response.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
   response.setHeader('X-Content-Type-Options', 'nosniff');
   response.setHeader('X-Frame-Options', 'SAMEORIGIN');
   response.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
@@ -1071,11 +1072,22 @@ async function handleRequest(request, response) {
       const idempotencyKey = String(request.headers['idempotency-key'] || payload.idempotencyKey || '').trim().slice(0, 160) || null;
       const existing = await findIdempotentTask(idempotencyKey);
       if (existing) { response.writeHead(200); response.end(JSON.stringify(existing)); return; }
-      const result = await runAgent(task.trim());
-      const persistence = await persistTask(result, idempotencyKey);
-      const output = { ...result, persistence };
-      if (idempotencyKey && !supabaseUrl) memoryIdempotency.set(idempotencyKey, output);
-      response.writeHead(200); response.end(JSON.stringify(output));
+      const workspace = await requireWorkspaceMember(['owner', 'admin', 'member']);
+      const settings = await getSettings();
+      const concurrencyLimit = Math.min(20, Math.max(1, Number(settings.max_concurrent_runs || 3)));
+      const runningCount = runningAgentCounts.get(workspace.id) || 0;
+      if (runningCount >= concurrencyLimit) throw httpError(429, `Maximum concurrent Agent runs reached (${concurrencyLimit})`, 'agent_concurrency_limit');
+      runningAgentCounts.set(workspace.id, runningCount + 1);
+      try {
+        const result = await runAgent(task.trim());
+        const persistence = await persistTask(result, idempotencyKey);
+        const output = { ...result, persistence };
+        if (idempotencyKey && !supabaseUrl) memoryIdempotency.set(idempotencyKey, output);
+        response.writeHead(200); response.end(JSON.stringify(output));
+      } finally {
+        const nextCount = (runningAgentCounts.get(workspace.id) || 1) - 1;
+        if (nextCount > 0) runningAgentCounts.set(workspace.id, nextCount); else runningAgentCounts.delete(workspace.id);
+      }
   } catch (error) {
       response.writeHead(Number(error.status) || 500); response.end(JSON.stringify({ error: error.message, code: error.code || 'internal_error' }));
   }
