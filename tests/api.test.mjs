@@ -37,6 +37,21 @@ test('health endpoint is public and reports service status', async () => {
   assert.equal((await response.json()).ok, true);
 });
 
+test('CORS preflight allows authenticated mutation methods', async () => {
+  const response = await fetch(`http://127.0.0.1:${port}/api/tasks`, {
+    method: 'OPTIONS',
+    headers: {
+      origin: 'https://flowpilot.example.com',
+      'access-control-request-method': 'PATCH',
+      'access-control-request-headers': 'authorization, content-type, x-workspace-id',
+    },
+  });
+  assert.equal(response.status, 204);
+  assert.match(response.headers.get('access-control-allow-methods') || '', /PATCH/);
+  assert.match(response.headers.get('access-control-allow-methods') || '', /DELETE/);
+  assert.match(response.headers.get('access-control-allow-headers') || '', /X-Workspace-Id/);
+});
+
 test('demo agent fallback persists only one result per idempotency key', async () => {
   const headers = { 'content-type': 'application/json', 'idempotency-key': 'test-idempotency-001' };
   const body = JSON.stringify({ task: '测试 fallback' });
