@@ -357,6 +357,8 @@ async function processKnowledgeDocument({ documentId, workspaceId, storagePath, 
     const text = await extractFileText({ name, mimeType, buffer });
     const chunks = splitText(text);
     if (!chunks.length) throw httpError(422, 'The file did not contain extractable text', 'empty_document');
+    const deleteChunksResponse = await fetchWithTimeout(`${supabaseUrl}/rest/v1/knowledge_chunks?document_id=eq.${encodeURIComponent(documentId)}`, { method: 'DELETE', headers }, 10_000);
+    if (!deleteChunksResponse.ok) throw new Error(`Knowledge chunks cleanup failed: ${deleteChunksResponse.status}`);
     await fetchWithTimeout(`${supabaseUrl}/rest/v1/knowledge_chunks`, { method: 'POST', headers, body: JSON.stringify(chunks.map((content, index) => ({ document_id: documentId, content, metadata: { title: name, chunk: index, source: 'file' } }))) }, 20_000);
     await fetchWithTimeout(`${supabaseUrl}/rest/v1/knowledge_documents?id=eq.${encodeURIComponent(documentId)}&workspace_id=eq.${encodeURIComponent(workspaceId)}`, { method: 'PATCH', headers, body: JSON.stringify({ status: 'indexed', indexed_at: new Date().toISOString() }) }, 10_000);
     logEvent('knowledge.indexed', { document_id: documentId, chunks: chunks.length });
