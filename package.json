@@ -8,15 +8,18 @@
     "api": "node server.mjs",
     "start": "npm run build && node server.mjs",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --test tests/*.test.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
-    "vite": "latest",
-    "typescript": "latest",
+    "lucide-react": "latest",
+    "mammoth": "^1.13.0",
+    "pdf-parse": "^2.4.5",
     "react": "latest",
     "react-dom": "latest",
-    "lucide-react": "latest"
-  },
-  "devDependencies": {}
+    "typescript": "latest",
+    "vite": "latest",
+    "xlsx": "^0.18.5"
+  }
 }

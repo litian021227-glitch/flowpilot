@@ -21,6 +21,9 @@ create table if not exists public.workspace_invitations (
   email text not null,
   role text not null default 'member' check (role in ('admin', 'member', 'viewer')),
   status text not null default 'pending' check (status in ('pending', 'accepted', 'expired', 'revoked')),
+  token_hash text,
+  accepted_at timestamptz,
+  revoked_at timestamptz,
   created_at timestamptz not null default now(),
   expires_at timestamptz not null default (now() + interval '7 days')
 );
@@ -29,7 +32,8 @@ create table if not exists public.tasks (
   id uuid primary key default gen_random_uuid(),
   workspace_id uuid not null references public.workspaces(id) on delete cascade,
   title text not null,
-  status text not null default 'pending' check (status in ('pending', 'running', 'approval', 'completed', 'failed')),
+  status text not null default 'pending' check (status in ('pending', 'running', 'approval', 'completed', 'failed', 'cancelled')),
+  idempotency_key text,
   input jsonb not null default '{}'::jsonb,
   result jsonb,
   created_at timestamptz not null default now(),
@@ -41,6 +45,15 @@ create table if not exists public.knowledge_documents (
   workspace_id uuid not null references public.workspaces(id) on delete cascade,
   title text not null,
   source_type text not null default 'upload',
+  owner_id uuid references auth.users(id) on delete set null,
+  file_name text,
+  storage_path text,
+  mime_type text,
+  file_size_bytes bigint,
+  sha256 text,
+  status text not null default 'indexed' check (status in ('uploaded', 'processing', 'indexed', 'failed', 'deleted')),
+  error_message text,
+  indexed_at timestamptz,
   created_at timestamptz not null default now()
 );
 
@@ -110,6 +123,10 @@ create index if not exists approval_requests_status_idx on public.approval_reque
 create index if not exists audit_events_workspace_created_idx on public.audit_events(workspace_id, created_at desc);
 create index if not exists workspace_members_user_workspace_idx on public.workspace_members(user_id, workspace_id);
 create index if not exists workspace_invitations_workspace_status_idx on public.workspace_invitations(workspace_id, status, created_at desc);
+create unique index if not exists tasks_workspace_idempotency_key_uidx on public.tasks(workspace_id, idempotency_key) where idempotency_key is not null;
+create unique index if not exists workspace_invitations_token_hash_uidx on public.workspace_invitations(token_hash) where token_hash is not null;
+create index if not exists knowledge_documents_workspace_status_idx on public.knowledge_documents(workspace_id, status, created_at desc);
+create unique index if not exists knowledge_documents_workspace_sha256_uidx on public.knowledge_documents(workspace_id, sha256) where sha256 is not null;
 create index if not exists integrations_workspace_status_idx on public.integrations(workspace_id, status);
 
 alter table public.workspaces enable row level security;

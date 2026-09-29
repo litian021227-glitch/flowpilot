@@ -26,14 +26,20 @@ FlowPilot 是一个面向企业团队的 AI 业务流程自动化平台 Demo，�
 - `GET /api/workspaces`：查看工作区
 - `GET /api/team`：查看工作区成员
 - `POST /api/team/invite`：创建成员邀请记录
+- `POST /api/team/invitations/respond`：接受或拒绝一次性邀请链接
+- `PATCH /api/team/members/:id` / `DELETE /api/team/members/:id`：更新或移除成员
 - `GET /api/integrations`：查看应用集成目录和连接状态
 - `PATCH /api/integrations/:provider`：更新集成连接状态
+- `POST /api/integrations/webhook`：校验 HMAC、时间戳和 event id 后接收 Webhook
 - `GET /api/settings`：查看工作区设置
 - `PATCH /api/settings`：更新模型、审批开关和并发限制
 - `POST /api/tasks/:id/approve`：通过或拒绝任务审批
 - `POST /api/knowledge/ingest`：导入知识文档并切分内容
+- `POST /api/knowledge/files`：安全上传 PDF、DOCX、XLSX、CSV、TXT 并异步索引
 - `GET /api/knowledge/documents`：查看知识库文档
 - `GET /api/knowledge/chunks?documentId=...`：查看文档切分后的知识片段
+- `DELETE /api/knowledge/documents/:id`：删除文档、Storage 对象和知识片段
+- `POST /api/knowledge/documents/:id/reindex`：重新解析并索引文档
 - `GET /api/approvals`：查看待审批事项
 - `GET /api/agent/runs?taskId=...`：查看 Agent 执行记录
 - `GET /api/audit?taskId=...`：查看任务审计轨迹
@@ -60,6 +66,8 @@ AI_PROVIDER=deepseek
 AI_API_KEY=
 AI_BASE_URL=https://api.deepseek.com
 AI_MODEL=deepseek-flash
+AI_TIMEOUT_MS=30000
+AI_MAX_RETRIES=2
 API_PORT=8787
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
@@ -67,6 +75,14 @@ VITE_SUPABASE_URL=
 VITE_SUPABASE_ANON_KEY=
 ALLOWED_ORIGIN=*
 REQUEST_LIMIT=120
+REQUEST_BODY_LIMIT_BYTES=2097152
+KNOWLEDGE_FILE_LIMIT_BYTES=10485760
+KNOWLEDGE_STORAGE_BUCKET=flowpilot-knowledge
+WEBHOOK_SIGNING_SECRET=
+INVITATION_BASE_URL=http://localhost:5173
+INVITATION_EXPIRES_HOURS=168
+REQUIRE_AUTH=true
+NODE_ENV=production
 ```
 
 没有 `AI_API_KEY` 时，Agent 使用 Demo 模式；没有 Supabase 配置时，任务和知识片段使用内存 fallback。项目仍兼容旧的 `OPENAI_API_KEY` / `OPENAI_MODEL` 配置。
@@ -77,7 +93,9 @@ Supabase Auth 已接入邮箱登录、注册、会话恢复和退出。完成 Su
 
 ## 数据库
 
-在 Supabase SQL Editor 中执行 `supabase/schema.sql`。脚本包含 `workspace_members` 和基于成员角色的 RLS policy；首次启用真实登录后，需要把注册用户的 UUID 写入 `workspace_members`，再允许其访问对应工作区。`SUPABASE_SERVICE_ROLE_KEY` 只允许在服务端使用。
+在 Supabase SQL Editor 中执行 `supabase/schema.sql`；已有项目还需要执行 `supabase/migrations/20260930_production_hardening.sql`。迁移包含任务幂等键、邀请 token hash、文件索引状态、Storage 元数据、更新时间触发器和 membership RLS helper。首次启用真实登录后，需要把注册用户的 UUID 写入 `workspace_members`，再允许其访问对应工作区。`SUPABASE_SERVICE_ROLE_KEY` 只允许在服务端使用。
+
+文件上传前，在 Supabase Storage 创建私有 bucket `flowpilot-knowledge`，并根据 workspace membership 编写 Storage policy。没有 Storage 配置时，文本导入和 Demo fallback 仍可用，但文件 API 会明确返回 `storage_unavailable`。
 
 ## Docker
 
@@ -91,8 +109,8 @@ docker run --env-file .env -p 8787:8787 flowpilot
 - 前端部署到 Vercel 或静态托管平台
 - API 部署到 Railway、Render、Fly.io 或任意 Node 容器平台
 - 将 `/api` 代理到 API 服务地址
-- 配置 OpenAI 和 Supabase 服务端密钥
-- 上线前替换 Demo RLS policy、增加日志和限流
+- 配置 DeepSeek/OpenAI 和 Supabase 服务端密钥
+- 上线前执行 production hardening migration、启用 `REQUIRE_AUTH=true`、增加日志和限流
 
 ## Render 一体化部署
 
@@ -102,7 +120,7 @@ docker run --env-file .env -p 8787:8787 flowpilot
 2. 登录 Render，选择 New → Blueprint。
 3. 选择这个 GitHub 仓库，Render 会读取 `render.yaml`。
 4. 在 Environment 中填写 `AI_API_KEY`、`SUPABASE_URL` 和 `SUPABASE_SERVICE_ROLE_KEY`。当前 Blueprint 默认使用 DeepSeek：`AI_BASE_URL=https://api.deepseek.com`、`AI_MODEL=deepseek-flash`。
-5. 确认 `ALLOWED_ORIGIN` 为 `https://flowpilot-9hrw.onrender.com`；如果 Render 分配了新的服务域名，需要同步修改。
+5. 确认 `ALLOWED_ORIGIN` 为正式前端域名；如果 Render 分配了新的服务域名，需要同步修改，并在完成 membership 验收后设置 `REQUIRE_AUTH=true`。
 6. 点击 Apply，等待构建完成。
 7. 打开 `https://你的服务名.onrender.com/api/health`，看到 `ok: true` 即部署成功。
 
