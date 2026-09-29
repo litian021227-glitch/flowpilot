@@ -205,6 +205,30 @@ const demoResult = (task) => ({
   requiresApproval: true,
 });
 
+function extractProviderText(data) {
+  if (typeof data?.output_text === 'string' && data.output_text.trim()) return data.output_text.trim();
+  if (Array.isArray(data?.output)) {
+    const text = data.output
+      .filter((item) => item?.type === 'message' && Array.isArray(item.content))
+      .flatMap((item) => item.content)
+      .filter((part) => part?.type === 'output_text' && typeof part.text === 'string')
+      .map((part) => part.text.trim())
+      .filter(Boolean)
+      .join('\n');
+    if (text) return text;
+  }
+  if (Array.isArray(data?.choices)) {
+    const text = data.choices
+      .map((choice) => choice?.message?.content || choice?.text)
+      .filter((value) => typeof value === 'string')
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .join('\n');
+    if (text) return text;
+  }
+  return '';
+}
+
 async function runAgent(task) {
   const sources = await searchKnowledge(task, 3);
   if (!aiApiKey) return { ...demoResult(task), sources };
@@ -223,8 +247,8 @@ async function runAgent(task) {
       });
       if (response.ok) {
         const data = await response.json();
-        const text = typeof data.output_text === 'string' ? data.output_text.trim() : '';
-        if (!text) throw httpError(502, 'AI provider returned an empty response', 'provider_invalid_response');
+        const text = extractProviderText(data);
+        if (!text) throw httpError(502, data?.error?.message || 'AI provider returned an empty response', 'provider_invalid_response');
         logEvent('agent.provider_success', { provider: aiProvider, model: aiModel, attempt: attempt + 1 });
         return { mode: 'live', task, summary: text, trace: demoResult(task).trace, sources, requiresApproval: true };
       }
@@ -234,13 +258,13 @@ async function runAgent(task) {
       if (!retryable || attempt >= aiMaxRetries) break;
     } catch (error) {
       const retryable = error.name === 'AbortError' || error.code === 'UND_ERR_CONNECT_TIMEOUT' || error.status >= 500;
-      lastFailure = { status: error.name === 'AbortError' ? 408 : 0, retryable, message: error.message };
+      lastFailure = { status: error.name === 'AbortError' ? 408 : 0, retryable, code: error.code, message: error.message };
       logEvent('agent.provider_exception', { provider: aiProvider, model: aiModel, code: error.name || error.code || 'unknown', attempt: attempt + 1, message: redact(error.message) });
       if (!retryable || attempt >= aiMaxRetries) break;
     }
     await new Promise((resolve) => setTimeout(resolve, Math.min(2_000, 250 * (2 ** attempt))));
   }
-  const failureCode = lastFailure?.status === 401 || lastFailure?.status === 403 ? 'provider_auth_failed' : lastFailure?.status === 429 ? 'provider_rate_limited' : lastFailure?.status === 408 ? 'provider_timeout' : 'provider_unavailable';
+  const failureCode = lastFailure?.code === 'provider_invalid_response' ? 'provider_invalid_response' : lastFailure?.status === 401 || lastFailure?.status === 403 ? 'provider_auth_failed' : lastFailure?.status === 429 ? 'provider_rate_limited' : lastFailure?.status === 408 ? 'provider_timeout' : 'provider_unavailable';
   return { ...demoResult(task), sources, mode: 'fallback', summary: `AI 服务未能完成本次请求（${failureCode}），已安全降级为演示结果。`, providerError: failureCode, failure: { code: failureCode, retryable: Boolean(lastFailure?.retryable) } };
 }
 
