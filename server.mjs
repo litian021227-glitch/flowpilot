@@ -390,22 +390,42 @@ async function reindexKnowledgeDocument(documentId) {
   return { documentId, status: 'indexed' };
 }
 
+function knowledgeTerms(text) {
+  const normalized = String(text || '').toLowerCase();
+  const terms = new Set(normalized.match(/[a-z0-9][a-z0-9_-]{1,}/g) || []);
+  for (const run of normalized.match(/[\u4e00-\u9fff]{2,}/g) || []) {
+    for (let size = 2; size <= Math.min(4, run.length); size += 1) {
+      for (let index = 0; index <= run.length - size; index += 1) terms.add(run.slice(index, index + size));
+    }
+  }
+  return [...terms];
+}
+
+function knowledgeScore(content, terms) {
+  const haystack = String(content || '').toLowerCase();
+  return terms.reduce((score, term) => score + (haystack.includes(term) ? term.length >= 3 ? 2 : 1 : 0), 0);
+}
+
 async function searchKnowledge(query, limit = 5) {
+  const terms = knowledgeTerms(query);
   if (!supabaseUrl || !supabaseKey) {
-    const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
     return memoryDocuments
-      .map((item) => ({ ...item, score: terms.reduce((score, term) => score + (item.content.toLowerCase().includes(term) ? 1 : 0), 0) }))
-      .filter((item) => item.score > 0)
+      .map((item) => ({ ...item, score: knowledgeScore(item.content, terms) }))
+      .filter((item) => !terms.length || item.score > 0)
       .sort((a, b) => b.score - a.score)
       .slice(0, limit);
   }
   const workspace = await requireWorkspaceMember();
-  const params = new URLSearchParams({ select: 'id,content,metadata,knowledge_documents!inner(workspace_id)', limit: String(limit), order: 'created_at.desc' });
+  const params = new URLSearchParams({ select: 'id,content,metadata,knowledge_documents!inner(workspace_id)', limit: '200', order: 'created_at.desc' });
   params.set('knowledge_documents.workspace_id', `eq.${workspace.id}`);
-  if (query.trim()) params.set('content', `ilike.*${query.trim().replace(/[,*]/g, ' ')}*`);
   const response = await fetchWithTimeout(`${supabaseUrl}/rest/v1/knowledge_chunks?${params.toString()}`, { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } }, 10_000);
   if (!response.ok) throw new Error(`Knowledge search failed: ${response.status}`);
-  return response.json();
+  const rows = await response.json();
+  return rows
+    .map((item) => ({ ...item, score: knowledgeScore(item.content, terms) }))
+    .filter((item) => !terms.length || item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
 }
 
 async function ingestKnowledge({ title, content }) {
