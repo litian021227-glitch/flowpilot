@@ -877,7 +877,7 @@ async function handleRequest(request, response) {
         if (!['admin', 'member', 'viewer'].includes(payload.role || 'member')) { response.writeHead(400); response.end(JSON.stringify({ error: 'invalid role' })); return; }
         const invitation = await inviteTeamMember({ email: payload.email.trim().toLowerCase(), role: payload.role || 'member' });
         response.writeHead(201); response.end(JSON.stringify({ invitation }));
-      } catch (error) { response.writeHead(500); response.end(JSON.stringify({ error: error.message })); }
+      } catch (error) { response.writeHead(Number(error.status) || 500); response.end(JSON.stringify({ error: error.message, code: error.code || 'invitation_failed' })); }
     });
     return;
   }
