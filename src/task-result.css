@@ -1,0 +1,38 @@
+.task-result {
+  margin: 14px 0;
+  padding: 13px 14px;
+  background: #f7f9fe;
+  border: 1px solid #e4eaf5;
+  border-radius: 9px;
+}
+
+.task-result p {
+  margin: 0;
+  color: #4d5d79;
+  white-space: pre-line;
+}
+
+.task-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.task-sources span,
+.task-sources small {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 7px;
+  border-radius: 5px;
+  background: #fff;
+  border: 1px solid #e0e7f3;
+  color: #687895;
+  font-size: 11px;
+}
+
+.task-sources span {
+  color: #356de5;
+  font-weight: 700;
+}
