@@ -27,6 +27,11 @@ const memoryIntegrations = [
   { id: 'integration-2', provider: 'notion', name: 'Notion', status: 'disabled' },
   { id: 'integration-3', provider: 'webhook', name: '通用 Webhook', status: 'disabled' },
 ];
+const defaultIntegrations = [
+  { provider: 'slack', name: 'Slack', status: 'disabled' },
+  { provider: 'notion', name: 'Notion', status: 'disabled' },
+  { provider: 'webhook', name: '通用 Webhook', status: 'disabled' },
+];
 const memorySettings = { ai_model: aiModel, approval_required: true, max_concurrent_runs: 3 };
 const memoryTasks = [
   { id: 'demo-1', title: 'Q2 销售策略分析', status: 'running', date: '2025-05-20', owner: 'AI Agent' },
@@ -677,9 +682,21 @@ async function respondToInvitation(token, action = 'accept') {
 async function listIntegrations() {
   if (!supabaseUrl || !supabaseKey) return memoryIntegrations;
   const workspace = await requireWorkspaceMember();
-  const response = await fetchWithTimeout(`${supabaseUrl}/rest/v1/integrations?select=id,provider,name,status,created_at,updated_at&workspace_id=eq.${encodeURIComponent(workspace.id)}&order=created_at.asc`, { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } }, 10_000);
+  const headers = { 'Content-Type': 'application/json', apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` };
+  const listUrl = `${supabaseUrl}/rest/v1/integrations?select=id,provider,name,status,created_at,updated_at&workspace_id=eq.${encodeURIComponent(workspace.id)}&order=created_at.asc`;
+  const response = await fetchWithTimeout(listUrl, { headers }, 10_000);
   if (!response.ok) throw new Error(`Integration list failed: ${response.status}`);
-  return response.json();
+  const rows = await response.json();
+  if (rows.length > 0) return rows;
+  const seedResponse = await fetchWithTimeout(`${supabaseUrl}/rest/v1/integrations?on_conflict=workspace_id,provider`, {
+    method: 'POST',
+    headers: { ...headers, Prefer: 'resolution=ignore-duplicates,return=minimal' },
+    body: JSON.stringify(defaultIntegrations.map((integration) => ({ ...integration, workspace_id: workspace.id }))),
+  }, 10_000);
+  if (!seedResponse.ok) throw new Error(`Integration catalog initialization failed: ${seedResponse.status}`);
+  const refreshed = await fetchWithTimeout(listUrl, { headers }, 10_000);
+  if (!refreshed.ok) throw new Error(`Integration list failed: ${refreshed.status}`);
+  return refreshed.json();
 }
 
 async function updateIntegration(provider, status) {
