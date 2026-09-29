@@ -9,11 +9,21 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: OPENAI_API_KEY
+      - key: AI_PROVIDER
+        value: deepseek
+      - key: AI_API_KEY
         sync: false
-      - key: OPENAI_MODEL
-        value: gpt-4.1-mini
+      - key: AI_BASE_URL
+        value: https://api.deepseek.com
+      - key: AI_MODEL
+        value: deepseek-flash
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
+      - key: ALLOWED_ORIGIN
+        value: https://flowpilot-9hrw.onrender.com
+      - key: REQUEST_LIMIT
+        value: "120"
+      - key: REQUIRE_AUTH
+        value: "false"
